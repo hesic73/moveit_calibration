@@ -240,23 +240,6 @@ public:
       return false;
     }
 
-    if (0 == CAMERA_DISTORTION_MODELS_VECTOR_DIMENSIONS.count(msg->distortion_model))
-    {
-      RCLCPP_ERROR(LOGGER_CALIBRATION_TARGET, "Invalid camera distortion model, '%s'.", msg->distortion_model.c_str());
-      return false;
-    }
-
-    const size_t camera_distortion_vector_dimension =
-        CAMERA_DISTORTION_MODELS_VECTOR_DIMENSIONS.at(msg->distortion_model);
-
-    if (msg->d.size() != camera_distortion_vector_dimension)
-    {
-      RCLCPP_ERROR(LOGGER_CALIBRATION_TARGET,
-                   "Invalid distortion parameters dimension, current is %ld, required is %zu.", msg->d.size(),
-                   camera_distortion_vector_dimension);
-      return false;
-    }
-
     std::lock_guard<std::mutex> base_lock(base_mutex_);
 
     // Store camera matrix info
@@ -268,9 +251,15 @@ public:
       }
     }
 
-    // Store camera distortion info
-    distortion_coeffs_ = cv::Mat::zeros(camera_distortion_vector_dimension, 1, CV_64F);
-    for (size_t i = 0; i < camera_distortion_vector_dimension; i++)
+    // Store camera distortion info, using the published vector length as-is.
+    // We deliberately do NOT require msg->d.size() to match the nominal size of
+    // the named distortion_model: some drivers (e.g. Orbbec) publish 8
+    // coefficients (k1,k2,p1,p2,k3,k4,k5,k6) while still labeling the model
+    // "plumb_bob". OpenCV's solvePnP / estimatePoseCharucoBoard accept 0/4/5/8/12/14
+    // coefficients, so pass them through unchanged instead of rejecting the
+    // CameraInfo (which would leave the intrinsics at the identity matrix).
+    distortion_coeffs_ = cv::Mat::zeros(msg->d.size(), 1, CV_64F);
+    for (size_t i = 0; i < msg->d.size(); i++)
     {
       distortion_coeffs_.at<double>(i, 0) = msg->d[i];
     }
